@@ -1,0 +1,178 @@
+---
+title: "web-scraping-practice"
+author: "Yiwen Zhang 31203019"
+date: "5/23/2021"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
+library(rvest)
+library(available)
+library(xml2)
+```
+
+## to get the commits count on Github repo of packages
+
+```{r}
+library(tidyverse)
+library(rvest)
+library(available)
+library(xml2)
+description <- sprintf("%s/web/packages/packages.rds",
+                          getOption("repos")["CRAN"])
+  con <- if(substring(description, 1L, 7L) == "file://") {
+       file(description, "rb")
+  } else {
+      url(description, "rb")
+  }
+  db <- as.data.frame(readRDS(gzcon(con)),stringsAsFactors=FALSE)
+  close(con)
+  rownames(db) <- NULL
+
+pkg_url <- db %>%
+  select(Package,URL)
+
+a <- pkg_url$URL[str_detect(pkg_url$URL,'github.com')]
+
+pkg_url <- pkg_url%>%
+  filter(URL%in%a)%>%
+  na.omit() %>%
+  rename(package = Package)
+
+#replace all the "https" with "http" in URL
+pkg_url$URL <- str_replace_all(pkg_url$URL, "https", "http")
+
+#remove"<>" in URL
+b <- pkg_url$URL[str_detect(pkg_url$URL,'<')]
+
+pkg_url_adj1 <- pkg_url%>%
+  filter(URL%in%b)%>%
+  mutate(URL = str_remove(URL,coll(str_sub(URL, str_locate(URL, '<'))))) %>%
+  mutate(URL = str_remove(URL,coll(str_sub(URL, str_locate(URL, '>')))))
+
+pkg_url_adj1$URL[1] <- str_remove(pkg_url_adj1$URL[1],coll(str_sub(pkg_url_adj1$URL[1], str_locate(pkg_url_adj1$URL[1], ',\n')[1])))
+
+pkg_url_adj1$URL[5] <- str_remove(pkg_url_adj1$URL[5],coll(str_sub(pkg_url_adj1$URL[5], str_locate(pkg_url_adj1$URL[5], ',')[1])))
+
+pkg_url_adj1$URL[12] <- str_remove(pkg_url_adj1$URL[12],coll(str_sub(pkg_url_adj1$URL[12], str_locate(pkg_url_adj1$URL[12], ',\n')[1])))
+
+pkg_url_adj1$URL[15] <- str_remove(pkg_url_adj1$URL[15],coll(str_sub(pkg_url_adj1$URL[15], str_locate(pkg_url_adj1$URL[15], ',\n')[1])))
+
+#remove ", http" URL for some pkgs
+#c <- pkg_url$URL[str_detect(pkg_url$URL,',')]
+
+pkg_url_adj2 <- pkg_url%>%
+  filter(!(package%in%pkg_url_adj1$package))
+  #filter(URL%in%c)%>%
+  #mutate(URL = str_remove(URL,coll(str_sub(URL, str_locate(URL, ',')[1]))))
+
+d <- pkg_url_adj2$URL[str_detect(pkg_url_adj2$URL,'github.com')]
+
+pkg_url_adj2 <- pkg_url_adj2 %>%
+  filter(URL%in%d) 
+  
+
+##further remove "," 
+#e <- pkg_url_adj2$URL[str_detect(pkg_url_adj2$URL,',')]
+
+#pkg_url_adj22 <- pkg_url_adj2%>%
+  #filter(URL%in%e)%>%
+  #mutate(URL = str_remove(URL,coll(str_sub(URL, str_locate(URL, ',')[1]))))
+
+#f <- pkg_url_adj22$URL[str_detect(pkg_url_adj22$URL,'http')]
+
+#pkg_url_adj22 <- pkg_url_adj22%>%
+  #filter(URL%in%f)
+
+#combine data 
+pkg_url_rest <- pkg_url%>%
+  filter(!(package%in%pkg_url_adj1$package)) %>%
+  filter(!(package%in%pkg_url_adj2$package)) 
+  #filter(!(package%in%pkg_url_adj22$package))
+
+pkg_url_new <- rbind(pkg_url_rest,pkg_url_adj1,pkg_url_adj2) %>%
+  arrange(package)
+
+#g <- pkg_url_new$URL[str_detect(pkg_url_new$URL,',')]
+
+#make all URLs have consistent format
+#pkg_url_new <- pkg_url_new %>%
+  #filter(!(URL%in%g))
+  
+#get the user and repo name
+pkg_url_new$URL <- str_extract(pkg_url_new$URL,coll(str_sub(pkg_url_new$URL, str_locate(pkg_url_new$URL, 'http://github.com/')[1])))
+
+j <- pkg_url_new$URL[str_detect(pkg_url_new$URL,'github.io')]
+
+pkg_url_new <- pkg_url_new %>%
+  filter(!(URL%in%j)) %>%
+ mutate(user_repo = str_sub(URL, str_locate(URL, 'github.com/')[2]+11)) %>%
+  select(package,user_repo)
+
+#h <- pkg_url_new$user_repo[str_detect(pkg_url_new$user_repo,' ')]
+
+#get all the username and repo name done
+#pkg_url_new <- pkg_url_new %>%
+  #filter(!(user_repo%in%h))
+
+pkg_url_new <- pkg_url_new %>%
+  mutate(user = (str_extract(user_repo,boundary("word"))))%>%
+  select(package,user)
+
+e <- pkg_url_new$user[str_detect(pkg_url_new$user,'.io')]
+f <- pkg_url_new$user[str_detect(pkg_url_new$user,'.org')]
+g <- pkg_url_new$user[str_detect(pkg_url_new$user,'org')]
+h <- pkg_url_new$user[str_detect(pkg_url_new$user,'.com')]
+i <- pkg_url_new$user[str_detect(pkg_url_new$user,'.r')]
+
+pkg_url_new <- pkg_url_new %>%
+  filter(!(user%in%e)) %>%
+  filter(!(user%in%f))%>%
+  filter(!(user%in%g))%>%
+  filter(!(user%in%h))%>%
+  filter(!(user%in%i))%>%
+  filter(!(package == "abess")) %>%
+  filter(!(user == "r")) %>%
+  filter(!(user == "io")) %>%
+  mutate(user_repo = str_c(user,"/",package))%>%
+  mutate(commits = get_commits(user_repo))
+
+```
+
+```{r function-commits}
+
+# extract commits on master branch on Github
+get_commits <- map(pkg_url_new$user_repo, function(user_repo){
+
+pkg_url <- GET(glue::glue("https://api.github.com/repos/{user_repo}/commits?per_page=1"))
+
+# function used to extract commits from github page
+commits <-  function(pkg_url) {
+  
+headers(pkg_url)$link
+
+c <- str_split(headers(pkg_url)$link, ",") %>%
+  unlist()
+
+
+d <- c[str_detect(c,'rel=\"last\"')] 
+
+
+f <- str_sub(d, str_locate(d, '&page=')[2]+1, str_locate(d, '>')[1]-1)
+
+  return(f)
+}
+  commits(pkg_url)
+ 
+})
+
+#convert the list output to dataframe
+commits <- data.frame(matrix(unlist(get_commits), nrow=length(get_commits), byrow=TRUE))
+colnames(commits)[1] <- "commits"
+
+#append the commits to the original data
+pkg_commits <-  cbind(pkg_url_new,commits)
+```
+
