@@ -15,6 +15,7 @@ library(xml2)
 
 ## to get the commits count on Github repo of packages
 
+#code written by myself initially (also used to get the user_repo)
 ```{r}
 library(tidyverse)
 library(rvest)
@@ -144,7 +145,7 @@ pkg_url_new <- pkg_url_new %>%
 ```{r function-commits}
 
 # extract commits on master branch on Github
-get_commits <- map(pkg_url_new$user_repo, function(user_repo){
+get_commits <- map(dd2_new$user_repo, function(user_repo){
 
 pkg_url <- GET(glue::glue("https://api.github.com/repos/{user_repo}/commits?per_page=1"))
 
@@ -173,40 +174,45 @@ commits <- data.frame(matrix(unlist(get_commits), nrow=length(get_commits), byro
 colnames(commits)[1] <- "commits"
 
 #append the commits to the original data
-pkg_commits <-  cbind(pkg_url_new,commits)
+pkg_commits <-  cbind(dd2_new,commits)
 ```
 
+#code used in final project to get the user_repo
+```{r}
+getPackageRDS <- function() {
+     description <- sprintf("%s/web/packages/packages.rds",
+                            getOption("repos")["CRAN"])
+     con <- if(substring(description, 1L, 7L) == "file://") {
+         file(description, "rb")
+     } else {
+         url(description, "rb")
+     }
+     on.exit(close(con))
+     db <- readRDS(gzcon(con))
+     rownames(db) <- NULL
+     return(db)
+}
+
+dd <- as.data.frame(getPackageRDS())
+dd2 <- subset(dd, grepl("github.com", URL))
+
+## clean up (multiple URLs, etc.)
+dd2$URL <- sapply(strsplit(dd2$URL,"[, \n]"),
+       function(x) trimws(grep("github.com", x, value=TRUE)[1]))
+
+dd2$URL <- str_replace_all(dd2$URL, "https", "http")
+
+dd2_new <- dd2 %>%
+  select(Package,URL) %>%
+  mutate(user_repo = str_sub(URL, str_locate(URL, 'github.com/')[2]+11)) 
+```
 
  
 # code used to get the commits for trending pkgs only (to compare the new method I USE)
 
-```{r}
-pkg_trending_49 <- pkg_trending %>%
-  head(49)
-
-pkg_trending_filter <- pkg_trending_49 %>%
-  filter(!(package == "proxy")) %>%
-  filter(!(package == "uplift")) %>%
-  filter(!(package == "spatstat.geom")) %>%
-  filter(!(package == "ClickClust")) %>%
-  filter(!(package == "gRc")) %>%
-  filter(!(package == "anesrake")) %>%
-  filter(!(package == "svd")) %>%
-  filter(!(package == "textutils")) %>%
-  filter(!(package == "rgl")) %>%
-  filter(!(package == "tseries")) %>%
-  filter(!(package == "tsDyn")) %>%
-  filter(!(package == "tseriesChaos")) %>%
-  filter(!(package == "penalized")) %>%
-  filter(!(package == "mapdata")) %>%
-  filter(!(package == "plot3D")) %>%
-  filter(!(package == "ic.infer")) %>%
-  filter(!(package == "misc3d")) %>%
-  filter(!(package == "textshaping")) %>%
-  filter(!(package == "ragg"))
-```
 
 ```{r function-commits}
+library(httr)
 # function used to extract commits on master branch on Github
 get_commits <- function(username,pkg){
 pkg_url <- GET(glue::glue("https://api.github.com/repos/{username}/{pkg}/commits?per_page=1"))
@@ -224,7 +230,6 @@ f <- str_sub(d, str_locate(d, '&page=')[2]+1, str_locate(d, '>')[1]-1)
  
 }
 ```
-
 
 
 ```{r  trending-commits1}
